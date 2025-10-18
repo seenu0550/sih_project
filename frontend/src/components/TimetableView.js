@@ -23,12 +23,14 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import Layout from './Layout';
 import { timetablesAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 function TimetableView() {
   const [timetables, setTimetables] = useState([]);
   const [selectedTimetable, setSelectedTimetable] = useState(null);
   const [viewDialog, setViewDialog] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
 
   useEffect(() => {
     fetchTimetables();
@@ -89,7 +91,9 @@ function TimetableView() {
               <TableCell>Day</TableCell>
               {timeSlots.map(time => (
                 <TableCell key={time} sx={{ width: time === '13:00' ? '55px' : 'auto', minWidth: time === '13:00' ? '55px' : '100px' }}>
-                  {time === '13:00' ? 'LUNCH' : time}
+                  {time === '13:00' ? (
+                    <Box sx={{ ml: -5, mr: 3, textAlign: 'center' }}>LUNCH</Box>
+                  ) : time}
                 </TableCell>
               ))}
             </TableRow>
@@ -101,8 +105,8 @@ function TimetableView() {
                 {timeSlots.map(time => (
                   <TableCell key={`${day}-${time}`}>
                     {time === '13:00' ? (
-                      <Box sx={{ bgcolor: 'warning.light', p: 0.3, borderRadius: 1, width: '50px', textAlign: 'center' }}>
-                        <Typography variant="caption" sx={{ fontSize: '0.55rem' }}>LUNCH</Typography>
+                      <Box sx={{ bgcolor: 'warning.light', p: 0.5, borderRadius: 1, minWidth: '80px', textAlign: 'center', ml: -5, mr: 3 }}>
+                        <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: 'bold' }}>LUNCH BREAK</Typography>
                       </Box>
                     ) : groupedSlots[day] && groupedSlots[day][time] ? (
                       <Box sx={{ p: 0.5, minWidth: '80px' }}>
@@ -141,7 +145,7 @@ function TimetableView() {
   return (
     <Layout>
       <Typography variant="h4" gutterBottom>
-        Saved Timetables
+        {user?.role === 'admin' ? 'Saved Timetables' : 'Class Timetables'}
       </Typography>
 
       {timetables.length === 0 ? (
@@ -188,24 +192,28 @@ function TimetableView() {
                 >
                   View Details
                 </Button>
-                {timetable.status !== 'approved' && (
-                  <Button
-                    size="small"
-                    startIcon={<CheckCircleIcon />}
-                    onClick={() => handleApprove(timetable._id)}
-                    color="success"
-                  >
-                    Approve
-                  </Button>
+                {user?.role === 'admin' && (
+                  <>
+                    {timetable.status !== 'approved' && (
+                      <Button
+                        size="small"
+                        startIcon={<CheckCircleIcon />}
+                        onClick={() => handleApprove(timetable._id)}
+                        color="success"
+                      >
+                        Approve
+                      </Button>
+                    )}
+                    <Button
+                      size="small"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => handleDelete(timetable._id)}
+                      color="error"
+                    >
+                      Delete
+                    </Button>
+                  </>
                 )}
-                <Button
-                  size="small"
-                  startIcon={<DeleteIcon />}
-                  onClick={() => handleDelete(timetable._id)}
-                  color="error"
-                >
-                  Delete
-                </Button>
               </CardActions>
             </Card>
           ))}

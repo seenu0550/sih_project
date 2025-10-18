@@ -68,21 +68,32 @@ function Login() {
     setLoading(true);
     setError('');
 
-    try {
-      const response = await authAPI.login(loginData);
-      const userRole = loginData.username === 'admin' ? 'admin' : 'student';
-      login(response.data.access_token, { username: loginData.username, role: userRole });
-      navigate('/');
-    } catch (err) {
-      console.error('Login error:', err);
-      if (err.code === 'ERR_NETWORK') {
-        setError('Cannot connect to server. Please make sure the backend is running on port 8000.');
-      } else {
-        setError(err.response?.data?.detail || 'Login failed. Please check your credentials.');
+    // Retry login up to 2 times if it fails
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await authAPI.login(loginData);
+        const userRole = loginData.username === 'admin' ? 'admin' : 'student';
+        login(response.data.access_token, { username: loginData.username, role: userRole });
+        navigate('/');
+        return;
+      } catch (err) {
+        console.error(`Login attempt ${attempt} error:`, err);
+        
+        if (attempt === 2) {
+          // Final attempt failed
+          if (err.code === 'ERR_NETWORK') {
+            setError('Cannot connect to server. Please make sure the backend is running on port 8000.');
+          } else {
+            setError(err.response?.data?.detail || 'Login failed. Please check your credentials.');
+          }
+        } else {
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
-    } finally {
-      setLoading(false);
     }
+    
+    setLoading(false);
   };
 
   const handleRegister = async (e) => {
@@ -212,10 +223,11 @@ function Login() {
               margin="normal"
               value={loginData.username}
               onChange={(e) => setLoginData({ ...loginData, username: e.target.value })}
+
               required
               sx={{
                 '& .MuiOutlinedInput-root': {
-                  backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
                   borderRadius: 2
                 }
               }}
@@ -227,10 +239,11 @@ function Login() {
               margin="normal"
               value={loginData.password}
               onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
+
               required
               sx={{
                 '& .MuiOutlinedInput-root': {
-                  backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
                   borderRadius: 2
                 }
               }}
@@ -256,7 +269,7 @@ function Login() {
               }}
               disabled={loading}
             >
-              {loading ? 'Logging in...' : '🚀 Login'}
+              {loading ? 'Connecting...' : '🚀 Login'}
             </Button>
           </form>
         </TabPanel>

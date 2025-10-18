@@ -25,9 +25,18 @@ const theme = createTheme({
   },
 });
 
-function ProtectedRoute({ children }) {
-  const { token } = useAuth();
-  return token ? children : <Navigate to="/login" />;
+function ProtectedRoute({ children, adminOnly = false }) {
+  const { token, user } = useAuth();
+  
+  if (!token) {
+    return <Navigate to="/login" />;
+  }
+  
+  if (adminOnly && user?.role !== 'admin') {
+    return <Navigate to="/" />;
+  }
+  
+  return children;
 }
 
 function App() {
@@ -44,27 +53,27 @@ function App() {
               </ProtectedRoute>
             } />
             <Route path="/classrooms" element={
-              <ProtectedRoute>
+              <ProtectedRoute adminOnly={true}>
                 <Classrooms />
               </ProtectedRoute>
             } />
             <Route path="/subjects" element={
-              <ProtectedRoute>
+              <ProtectedRoute adminOnly={true}>
                 <Subjects />
               </ProtectedRoute>
             } />
             <Route path="/faculty" element={
-              <ProtectedRoute>
+              <ProtectedRoute adminOnly={true}>
                 <Faculty />
               </ProtectedRoute>
             } />
             <Route path="/batches" element={
-              <ProtectedRoute>
+              <ProtectedRoute adminOnly={true}>
                 <Batches />
               </ProtectedRoute>
             } />
             <Route path="/generate-timetable" element={
-              <ProtectedRoute>
+              <ProtectedRoute adminOnly={true}>
                 <TimetableGenerator />
               </ProtectedRoute>
             } />

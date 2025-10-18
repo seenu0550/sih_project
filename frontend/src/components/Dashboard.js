@@ -90,21 +90,34 @@ function Dashboard() {
           return;
         }
         
-        const [classrooms, subjects, faculty, batches, timetables] = await Promise.all([
-          classroomsAPI.getAll(),
-          subjectsAPI.getAll(),
-          facultyAPI.getAll(),
-          batchesAPI.getAll(),
-          timetablesAPI.getAll()
-        ]);
+        if (!user || user.role === 'admin') {
+          // Admin stats
+          const [classrooms, subjects, faculty, batches, timetables] = await Promise.all([
+            classroomsAPI.getAll(),
+            subjectsAPI.getAll(),
+            facultyAPI.getAll(),
+            batchesAPI.getAll(),
+            timetablesAPI.getAll()
+          ]);
 
-        setStats({
-          classrooms: classrooms.data.length,
-          subjects: subjects.data.length,
-          faculty: faculty.data.length,
-          batches: batches.data.length,
-          timetables: timetables.data.length
-        });
+          setStats({
+            classrooms: classrooms.data.length,
+            subjects: subjects.data.length,
+            faculty: faculty.data.length,
+            batches: batches.data.length,
+            timetables: timetables.data.length
+          });
+        } else {
+          // Student stats - only fetch timetables
+          const timetables = await timetablesAPI.getAll();
+          setStats({
+            classrooms: 0,
+            subjects: 0,
+            faculty: 0,
+            batches: 0,
+            timetables: timetables.data.length
+          });
+        }
       } catch (error) {
         console.error('Error fetching stats:', error);
         if (error.response?.status === 401) {
@@ -116,7 +129,7 @@ function Dashboard() {
     };
 
     fetchStats();
-  }, [navigate]);
+  }, [navigate, user]);
 
   return (
     <Layout>
@@ -236,46 +249,63 @@ function Dashboard() {
       {/* Stats Cards */}
       <Box sx={{ p: 0, pt: 3, pl: 3 }}>
       <Grid container spacing={0} sx={{ mb: 5 }}>
-        <Grid item xs={3}>
-          <StatCard
-            title="Classrooms"
-            value={stats.classrooms}
-            icon={<RoomIcon sx={{ fontSize: 24 }} />}
-            gradient="linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)"
-            emoji="🏫"
-            onClick={() => navigate('/classrooms')}
-          />
-        </Grid>
-        <Grid item xs={3}>
-          <StatCard
-            title="Subjects"
-            value={stats.subjects}
-            icon={<SchoolIcon sx={{ fontSize: 24 }} />}
-            gradient="linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%)"
-            emoji="📖"
-            onClick={() => navigate('/subjects')}
-          />
-        </Grid>
-        <Grid item xs={3}>
-          <StatCard
-            title="Faculty"
-            value={stats.faculty}
-            icon={<PersonIcon sx={{ fontSize: 24 }} />}
-            gradient="linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)"
-            emoji="👨🏫"
-            onClick={() => navigate('/faculty')}
-          />
-        </Grid>
-        <Grid item xs={3}>
-          <StatCard
-            title="Batches"
-            value={stats.batches}
-            icon={<GroupsIcon sx={{ fontSize: 24 }} />}
-            gradient="linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)"
-            emoji="👥"
-            onClick={() => navigate('/batches')}
-          />
-        </Grid>
+        {(!user || user.role === 'admin') ? (
+          <>
+            <Grid item xs={3}>
+              <StatCard
+                title="Classrooms"
+                value={stats.classrooms}
+                icon={<RoomIcon sx={{ fontSize: 24 }} />}
+                gradient="linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)"
+                emoji="🏫"
+                onClick={() => navigate('/classrooms')}
+              />
+            </Grid>
+            <Grid item xs={3}>
+              <StatCard
+                title="Subjects"
+                value={stats.subjects}
+                icon={<SchoolIcon sx={{ fontSize: 24 }} />}
+                gradient="linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%)"
+                emoji="📖"
+                onClick={() => navigate('/subjects')}
+              />
+            </Grid>
+            <Grid item xs={3}>
+              <StatCard
+                title="Faculty"
+                value={stats.faculty}
+                icon={<PersonIcon sx={{ fontSize: 24 }} />}
+                gradient="linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)"
+                emoji="👨🏫"
+                onClick={() => navigate('/faculty')}
+              />
+            </Grid>
+            <Grid item xs={3}>
+              <StatCard
+                title="Batches"
+                value={stats.batches}
+                icon={<GroupsIcon sx={{ fontSize: 24 }} />}
+                gradient="linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)"
+                emoji="👥"
+                onClick={() => navigate('/batches')}
+              />
+            </Grid>
+          </>
+        ) : (
+          <>
+            <Grid item xs={12}>
+              <StatCard
+                title="My Class Timetables"
+                value={stats.timetables}
+                icon={<CalendarTodayIcon sx={{ fontSize: 24 }} />}
+                gradient="linear-gradient(135deg, #4CAF50 0%, #45a049 100%)"
+                emoji="📅"
+                onClick={() => navigate('/timetables')}
+              />
+            </Grid>
+          </>
+        )}
       </Grid>
 
       {/* Feature Cards */}

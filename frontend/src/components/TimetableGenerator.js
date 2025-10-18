@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Typography,
   Button,
@@ -18,12 +18,16 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem
 } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SaveIcon from '@mui/icons-material/Save';
 import Layout from './Layout';
-import { timetablesAPI } from '../services/api';
+import { timetablesAPI, batchesAPI } from '../services/api';
 
 function TimetableGenerator() {
   const [formData, setFormData] = useState({
@@ -34,11 +38,25 @@ function TimetableGenerator() {
     working_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
     time_slots: ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00']
   });
+  const [batches, setBatches] = useState([]);
   const [options, setOptions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedOption, setSelectedOption] = useState(null);
   const [saveDialog, setSaveDialog] = useState(false);
   const [saveName, setSaveName] = useState('');
+
+  useEffect(() => {
+    fetchBatches();
+  }, []);
+
+  const fetchBatches = async () => {
+    try {
+      const response = await batchesAPI.getAll();
+      setBatches(response.data);
+    } catch (error) {
+      console.error('Error fetching batches:', error);
+    }
+  };
 
   const handleGenerate = async (e) => {
     e.preventDefault();
@@ -166,13 +184,23 @@ function TimetableGenerator() {
         <form onSubmit={handleGenerate}>
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Timetable Name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-              />
+              <FormControl fullWidth required>
+                <InputLabel>Batch Name</InputLabel>
+                <Select
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  label="Batch Name"
+                >
+                  <MenuItem value="">
+                    <em>Select a batch</em>
+                  </MenuItem>
+                  {batches.map((batch) => (
+                    <MenuItem key={batch._id || batch.name} value={batch.name}>
+                      {batch.name} - {batch.department} (Sem {batch.semester})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </Grid>
             <Grid item xs={12} md={3}>
               <TextField

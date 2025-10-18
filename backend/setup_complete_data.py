@@ -53,13 +53,15 @@ async def setup_complete_data():
         ]
         await subjects_collection.insert_many(subjects)
         
-        # Create faculty
+        # Create faculty with expanded subject coverage
         faculty = [
-            {"name": "Dr. Smith", "email": "smith@college.edu", "subjects": ["CS201", "CS201L"], "max_hours_per_day": 6, "avg_leaves_per_month": 2},
-            {"name": "Prof. Johnson", "email": "johnson@college.edu", "subjects": ["CS202", "CS202L"], "max_hours_per_day": 6, "avg_leaves_per_month": 1},
-            {"name": "Dr. Williams", "email": "williams@college.edu", "subjects": ["CS203", "CS203L"], "max_hours_per_day": 6, "avg_leaves_per_month": 2},
-            {"name": "Prof. Brown", "email": "brown@college.edu", "subjects": ["MA201"], "max_hours_per_day": 6, "avg_leaves_per_month": 1},
-            {"name": "Dr. Davis", "email": "davis@college.edu", "subjects": ["PH201"], "max_hours_per_day": 6, "avg_leaves_per_month": 2},
+            {"name": "Dr. Smith", "email": "smith@college.edu", "subjects": ["CS201", "CS201L", "CS202"], "max_hours_per_day": 6, "avg_leaves_per_month": 2},
+            {"name": "Prof. Johnson", "email": "johnson@college.edu", "subjects": ["CS202", "CS202L", "CS203"], "max_hours_per_day": 6, "avg_leaves_per_month": 1},
+            {"name": "Dr. Williams", "email": "williams@college.edu", "subjects": ["CS203", "CS203L", "CS201"], "max_hours_per_day": 6, "avg_leaves_per_month": 2},
+            {"name": "Prof. Brown", "email": "brown@college.edu", "subjects": ["MA201", "CS201"], "max_hours_per_day": 6, "avg_leaves_per_month": 1},
+            {"name": "Dr. Davis", "email": "davis@college.edu", "subjects": ["PH201", "CS202"], "max_hours_per_day": 6, "avg_leaves_per_month": 2},
+            {"name": "Prof. Anderson", "email": "anderson@college.edu", "subjects": ["CS201", "CS202", "CS203"], "max_hours_per_day": 6, "avg_leaves_per_month": 1},
+            {"name": "Dr. Taylor", "email": "taylor@college.edu", "subjects": ["CS201L", "CS202L", "CS203L"], "max_hours_per_day": 6, "avg_leaves_per_month": 2},
         ]
         await faculty_collection.insert_many(faculty)
         
@@ -89,12 +91,12 @@ async def setup_complete_data():
         ]
         await batches_collection.insert_many(batches)
         
-        print("✅ Complete sample data setup successful!")
-        print("📧 Admin login: admin / admin123")
-        print("🏫 Created 5 classrooms, 8 subjects, 5 faculty, 3 batches")
+        print("Complete sample data setup successful!")
+        print("Admin login: admin / admin123")
+        print("Created 5 classrooms, 8 subjects, 7 faculty, 3 batches")
         
     except Exception as e:
-        print(f"❌ Error setting up data: {e}")
+        print(f"Error setting up data: {e}")
 
 if __name__ == "__main__":
     asyncio.run(setup_complete_data())

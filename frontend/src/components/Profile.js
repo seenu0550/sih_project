@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   Typography,
   Box,
-  Paper,
   Avatar,
   Grid,
   Card,
@@ -21,30 +20,86 @@ import EmailIcon from '@mui/icons-material/Email';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import EditIcon from '@mui/icons-material/Edit';
 import Layout from './Layout';
+import { profileAPI } from '../services/api';
 
 function Profile() {
-  const [user, setUser] = useState({
-    username: 'admin',
-    email: 'admin@college.edu',
-    role: 'Administrator',
-    joinDate: '2024-01-01',
-    lastLogin: new Date().toISOString(),
-    permissions: ['Manage Classrooms', 'Manage Subjects', 'Manage Faculty', 'Manage Batches', 'Generate Timetables']
-  });
-  
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [editDialog, setEditDialog] = useState(false);
   const [editData, setEditData] = useState({
-    email: user.email
+    email: ''
   });
 
-  const handleEditSave = () => {
-    setUser({ ...user, email: editData.email });
-    setEditDialog(false);
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  const fetchProfile = async () => {
+    try {
+      const response = await profileAPI.get();
+      setUser(response.data);
+      setEditData({ email: response.data.email });
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      // Fallback to user data from AuthContext
+      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      if (userData.username) {
+        setUser({
+          username: userData.username,
+          email: userData.email || 'user@example.com',
+          role: userData.role || 'student',
+          is_active: true,
+          _id: 'temp-id'
+        });
+        setEditData({ email: userData.email || 'user@example.com' });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditSave = async () => {
+    try {
+      await profileAPI.update(editData);
+      setUser({ ...user, email: editData.email });
+      setEditDialog(false);
+      alert('Profile updated successfully!');
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      // Fallback - just update locally
+      setUser({ ...user, email: editData.email });
+      setEditDialog(false);
+      alert('Profile updated locally (backend update failed).');
+    }
   };
 
   const getInitials = (name) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
+
+  const getPermissions = (role) => {
+    if (role === 'admin') {
+      return ['Manage Classrooms', 'Manage Subjects', 'Manage Faculty', 'Manage Batches', 'Generate Timetables'];
+    } else {
+      return ['View Timetables', 'View Batch Schedule', 'Access Profile'];
+    }
+  };
+
+  if (loading) {
+    return (
+      <Layout>
+        <Typography>Loading profile...</Typography>
+      </Layout>
+    );
+  }
+
+  if (!user) {
+    return (
+      <Layout>
+        <Typography>Error loading profile.</Typography>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -77,7 +132,7 @@ function Profile() {
                 {user.username}
               </Typography>
               <Chip 
-                label={user.role}
+                label={user.role === 'admin' ? 'Administrator' : 'Student'}
                 sx={{ 
                   bgcolor: 'rgba(255,255,255,0.2)', 
                   color: 'white',
@@ -151,7 +206,7 @@ function Profile() {
                           Role
                         </Typography>
                         <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-                          {user.role}
+                          {user.role === 'admin' ? 'Administrator' : 'Student'}
                         </Typography>
                       </Box>
                     </Box>
@@ -162,10 +217,10 @@ function Profile() {
                       <Box sx={{ mr: 2, color: '#27ae60', fontSize: '24px' }}>📅</Box>
                       <Box>
                         <Typography variant="body2" color="textSecondary">
-                          Member Since
+                          Account Status
                         </Typography>
                         <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-                          {new Date(user.joinDate).toLocaleDateString()}
+                          {user.is_active ? '🟢 Active' : '🔴 Inactive'}
                         </Typography>
                       </Box>
                     </Box>
@@ -179,7 +234,7 @@ function Profile() {
                 🔐 Permissions
               </Typography>
               <Box sx={{ mt: 2 }}>
-                {user.permissions.map((permission, index) => (
+                {getPermissions(user.role).map((permission, index) => (
                   <Chip
                     key={index}
                     label={permission}
@@ -200,7 +255,7 @@ function Profile() {
               </Typography>
               <Box sx={{ mt: 2 }}>
                 <Typography variant="body2" color="textSecondary">
-                  Last Login: {new Date(user.lastLogin).toLocaleString()}
+                  User ID: {user._id}
                 </Typography>
                 <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
                   Session Status: 🟢 Active

@@ -58,4 +58,10 @@ export const timetablesAPI = {
   delete: (id) => api.delete(`/timetables/${id}`),
 };
 
+// Profile API
+export const profileAPI = {
+  get: () => api.get('/profile'),
+  update: (profileData) => api.put('/profile', profileData),
+};
+
 export default api;

@@ -42,9 +42,16 @@ function BatchTimetable() {
     
     try {
       const response = await timetablesAPI.getAll();
-      const batchTimetable = response.data.find(t => 
-        t.slots.some(slot => slot.batch_name === batchName)
-      );
+      // First try to find a timetable with matching name
+      let batchTimetable = response.data.find(t => t.name === batchName);
+      
+      // If not found by name, try to find by batch_name in slots
+      if (!batchTimetable) {
+        batchTimetable = response.data.find(t => 
+          t.slots && t.slots.some(slot => slot.batch_name === batchName)
+        );
+      }
+      
       setTimetable(batchTimetable);
     } catch (error) {
       console.error('Error fetching timetable:', error);
@@ -58,13 +65,12 @@ function BatchTimetable() {
     const timeSlots = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00'];
     
     const groupedSlots = {};
+    // Show all slots from the timetable since we already found the correct timetable by name
     timetable.slots.forEach(slot => {
-      if (slot.batch_name === selectedBatch) {
-        if (!groupedSlots[slot.day]) {
-          groupedSlots[slot.day] = {};
-        }
-        groupedSlots[slot.day][slot.time] = slot;
+      if (!groupedSlots[slot.day]) {
+        groupedSlots[slot.day] = {};
       }
+      groupedSlots[slot.day][slot.time] = slot;
     });
 
     return (
@@ -89,8 +95,8 @@ function BatchTimetable() {
                 {timeSlots.map(time => (
                   <TableCell key={`${day}-${time}`} align="center">
                     {time === '13:00' ? (
-                      <Box sx={{ p: 0.3, bgcolor: 'warning.light', borderRadius: 1, color: 'white', width: '50px', textAlign: 'center' }}>
-                        <Typography variant="caption" sx={{ fontSize: '0.55rem' }}>LUNCH</Typography>
+                      <Box sx={{ p: 0.5, bgcolor: 'warning.light', borderRadius: 1, color: 'white', minWidth: '80px', textAlign: 'center' }}>
+                        <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: 'bold' }}>LUNCH BREAK</Typography>
                       </Box>
                     ) : groupedSlots[day] && groupedSlots[day][time] ? (
                       <Box sx={{ p: 0.5, bgcolor: 'primary.light', borderRadius: 1, color: 'white', minWidth: '80px' }}>
