@@ -225,6 +225,52 @@ function Profile() {
                       </Box>
                     </Box>
                   </Grid>
+                  
+                  {user.role === 'student' && user.batch_name && (
+                    <>
+                      <Grid item xs={12} sm={6}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                          <Box sx={{ mr: 2, color: '#9b59b6', fontSize: '24px' }}>👥</Box>
+                          <Box>
+                            <Typography variant="body2" color="textSecondary">
+                              Batch
+                            </Typography>
+                            <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                              {user.batch_name}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Grid>
+                      
+                      <Grid item xs={12} sm={6}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                          <Box sx={{ mr: 2, color: '#e67e22', fontSize: '24px' }}>🏫</Box>
+                          <Box>
+                            <Typography variant="body2" color="textSecondary">
+                              Department
+                            </Typography>
+                            <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                              {user.batch_department}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Grid>
+                      
+                      <Grid item xs={12} sm={6}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                          <Box sx={{ mr: 2, color: '#3498db', fontSize: '24px' }}>📚</Box>
+                          <Box>
+                            <Typography variant="body2" color="textSecondary">
+                              Semester
+                            </Typography>
+                            <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                              Semester {user.batch_semester}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Grid>
+                    </>
+                  )}
                 </Grid>
               </Box>
 

@@ -19,12 +19,19 @@ api.interceptors.request.use((config) => {
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
   register: (userData) => api.post('/auth/register', userData),
+  getBatches: () => axios.get('http://localhost:8000/batches/public'),
+  getProfile: (token) => {
+    return api.get('/profile', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  },
 };
 
 // Classrooms API
 export const classroomsAPI = {
   getAll: () => api.get('/classrooms/'),
   create: (classroom) => api.post('/classrooms/', classroom),
+  update: (id, classroom) => api.put(`/classrooms/${id}`, classroom),
   delete: (id) => api.delete(`/classrooms/${id}`),
 };
 
@@ -32,6 +39,7 @@ export const classroomsAPI = {
 export const subjectsAPI = {
   getAll: () => api.get('/subjects/'),
   create: (subject) => api.post('/subjects/', subject),
+  update: (id, subject) => api.put(`/subjects/${id}`, subject),
   delete: (id) => api.delete(`/subjects/${id}`),
 };
 
@@ -39,6 +47,7 @@ export const subjectsAPI = {
 export const facultyAPI = {
   getAll: () => api.get('/faculty/'),
   create: (faculty) => api.post('/faculty/', faculty),
+  update: (id, faculty) => api.put(`/faculty/${id}`, faculty),
   delete: (id) => api.delete(`/faculty/${id}`),
 };
 
@@ -46,6 +55,7 @@ export const facultyAPI = {
 export const batchesAPI = {
   getAll: () => api.get('/batches/'),
   create: (batch) => api.post('/batches/', batch),
+  update: (id, batch) => api.put(`/batches/${id}`, batch),
   delete: (id) => api.delete(`/batches/${id}`),
 };
 
@@ -54,6 +64,7 @@ export const timetablesAPI = {
   getAll: () => api.get('/timetables/'),
   generate: (request) => api.post('/timetables/generate', request),
   save: (timetable) => api.post('/timetables/save', timetable),
+  update: (id, timetable) => api.put(`/timetables/${id}`, timetable),
   approve: (id) => api.put(`/timetables/${id}/approve`),
   delete: (id) => api.delete(`/timetables/${id}`),
 };

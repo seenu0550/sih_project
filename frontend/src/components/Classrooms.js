@@ -19,15 +19,20 @@ import {
   TableCell,
   TableContainer,
   TableHead,
-  TableRow
+  TableRow,
+  Alert
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import UploadIcon from '@mui/icons-material/Upload';
 import Layout from './Layout';
 import { classroomsAPI } from '../services/api';
 
 function Classrooms() {
   const [classrooms, setClassrooms] = useState([]);
   const [open, setOpen] = useState(false);
+  const [csvOpen, setCsvOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvResult, setCsvResult] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     capacity: '',
@@ -103,17 +108,66 @@ function Classrooms() {
     }
   };
 
+  const handleCsvUpload = async () => {
+    if (!csvFile) return;
+    const formData = new FormData();
+    formData.append('file', csvFile);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/classrooms/upload-csv', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      const result = await response.json();
+      setCsvResult(result);
+      
+      if (response.ok) {
+        // Refresh the classrooms list immediately
+        await fetchClassrooms();
+        setCsvFile(null);
+        // Keep dialog open to show results
+      }
+    } catch (error) {
+      console.error('Error uploading CSV:', error);
+      setCsvResult({ message: 'Upload failed', errors: [error.message] });
+    }
+  };
+
+  const downloadTemplate = () => {
+    const csvContent = "name,capacity,type,equipment\nExample Hall,50,lecture,projector;whiteboard\nExample Lab,30,lab,computers";
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'classrooms_template.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <Layout>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">Classrooms</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setOpen(true)}
-        >
-          Add Classroom
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<UploadIcon />}
+            onClick={() => setCsvOpen(true)}
+          >
+            Upload CSV
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setOpen(true)}
+          >
+            Add Classroom
+          </Button>
+        </Box>
       </Box>
 
       <TableContainer component={Paper}>
@@ -175,8 +229,10 @@ function Classrooms() {
               required
             />
             <FormControl fullWidth margin="normal">
-              <InputLabel>Type</InputLabel>
+              <InputLabel id="classroom-type-label">Type</InputLabel>
               <Select
+                labelId="classroom-type-label"
+                label="Type"
                 value={formData.type}
                 onChange={(e) => setFormData({ ...formData, type: e.target.value })}
               >
@@ -215,6 +271,52 @@ function Classrooms() {
             <Button type="submit" variant="contained">Add</Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      {/* CSV Upload Dialog */}
+      <Dialog open={csvOpen} onClose={() => setCsvOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Upload Classrooms CSV</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              CSV Format: name,capacity,type,equipment
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Equipment: separate multiple items with semicolon (;)
+            </Typography>
+            <Button variant="outlined" size="small" onClick={downloadTemplate}>
+              Download Template
+            </Button>
+          </Box>
+          
+          <input
+            type="file"
+            accept=".csv"
+            onChange={(e) => setCsvFile(e.target.files[0])}
+            style={{ marginBottom: '16px' }}
+          />
+          
+          {csvResult && (
+            <Alert severity={csvResult.errors?.length > 0 ? "warning" : "success"} sx={{ mt: 2 }}>
+              <Typography variant="body2">{csvResult.message}</Typography>
+              {csvResult.errors?.length > 0 && (
+                <Box sx={{ mt: 1 }}>
+                  {csvResult.errors.map((error, index) => (
+                    <Typography key={index} variant="caption" display="block">
+                      {error}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setCsvOpen(false); setCsvResult(null); setCsvFile(null); }}>Cancel</Button>
+          <Button onClick={handleCsvUpload} variant="contained" disabled={!csvFile}>
+            Upload
+          </Button>
+        </DialogActions>
       </Dialog>
     </Layout>
   );

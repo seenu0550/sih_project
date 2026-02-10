@@ -185,8 +185,9 @@ function TimetableGenerator() {
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
               <FormControl fullWidth required>
-                <InputLabel>Batch Name</InputLabel>
+                <InputLabel id="batch-name-label">Batch Name</InputLabel>
                 <Select
+                  labelId="batch-name-label"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   label="Batch Name"

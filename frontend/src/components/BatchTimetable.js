@@ -16,16 +16,41 @@ import {
   Grid
 } from '@mui/material';
 import Layout from './Layout';
-import { batchesAPI, timetablesAPI } from '../services/api';
+import { batchesAPI, timetablesAPI, profileAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 function BatchTimetable() {
   const [batches, setBatches] = useState([]);
   const [selectedBatch, setSelectedBatch] = useState('');
   const [timetable, setTimetable] = useState(null);
+  const [userBatch, setUserBatch] = useState(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     fetchBatches();
-  }, []);
+    if (user && user.role === 'student') {
+      fetchUserProfile();
+    }
+  }, [user]);
+
+  const fetchUserProfile = async () => {
+    try {
+      const response = await profileAPI.get();
+      const profile = response.data;
+      if (profile.batch_id) {
+        // Find the batch details
+        const batchResponse = await batchesAPI.getAll();
+        const batch = batchResponse.data.find(b => b._id === profile.batch_id);
+        if (batch) {
+          setUserBatch(batch);
+          setSelectedBatch(batch.name);
+          await handleBatchChange(batch.name);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
+  };
 
   const fetchBatches = async () => {
     try {
@@ -126,30 +151,37 @@ function BatchTimetable() {
   return (
     <Layout>
       <Typography variant="h4" gutterBottom>
-        Batch-wise Timetable
+        {user && user.role === 'student' && userBatch ? 
+          `My Batch Timetable - ${userBatch.name}` : 
+          'Batch-wise Timetable'
+        }
       </Typography>
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={4}>
-          <FormControl fullWidth>
-            <InputLabel>Select Batch</InputLabel>
-            <Select
-              value={selectedBatch}
-              onChange={(e) => handleBatchChange(e.target.value)}
-              displayEmpty
-            >
-              <MenuItem value="">
-                <em>Choose a batch</em>
-              </MenuItem>
-              {batches.map((batch) => (
-                <MenuItem key={batch._id || batch.name} value={batch.name}>
-                  {batch.name} - {batch.department} (Sem {batch.semester})
+      {(!user || user.role !== 'student' || !userBatch) && (
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={4}>
+            <FormControl fullWidth>
+              <InputLabel id="batch-select-label">Select Batch</InputLabel>
+              <Select
+                labelId="batch-select-label"
+                label="Select Batch"
+                value={selectedBatch}
+                onChange={(e) => handleBatchChange(e.target.value)}
+                displayEmpty
+              >
+                <MenuItem value="">
+                  <em>Choose a batch</em>
                 </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+                {batches.map((batch) => (
+                  <MenuItem key={batch._id || batch.name} value={batch.name}>
+                    {batch.name} - {batch.department} (Sem {batch.semester})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
         </Grid>
-      </Grid>
+      )}
 
       {selectedBatch && (
         <Box sx={{ mt: 3 }}>
@@ -159,7 +191,10 @@ function BatchTimetable() {
           {timetable ? renderBatchTimetable() : (
             <Paper sx={{ p: 4, textAlign: 'center' }}>
               <Typography variant="h6" color="textSecondary">
-                No timetable found for this batch
+                {user && user.role === 'student' ? 
+                  'No timetable has been allocated for your batch yet. Please check back later.' :
+                  'No timetable found for this batch'
+                }
               </Typography>
             </Paper>
           )}

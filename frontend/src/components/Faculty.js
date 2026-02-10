@@ -16,9 +16,14 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Autocomplete
+  Autocomplete,
+  Alert,
+  IconButton
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import UploadIcon from '@mui/icons-material/Upload';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 import Layout from './Layout';
 import { facultyAPI, subjectsAPI } from '../services/api';
 
@@ -26,6 +31,10 @@ function Faculty() {
   const [faculty, setFaculty] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [open, setOpen] = useState(false);
+  const [csvOpen, setCsvOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvResult, setCsvResult] = useState(null);
+  const [editingFaculty, setEditingFaculty] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -60,12 +69,20 @@ function Faculty() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await facultyAPI.create({
+      const facultyData = {
         ...formData,
         max_hours_per_day: parseInt(formData.max_hours_per_day),
         avg_leaves_per_month: parseInt(formData.avg_leaves_per_month)
-      });
+      };
+      
+      if (editingFaculty) {
+        await facultyAPI.update(editingFaculty._id, facultyData);
+      } else {
+        await facultyAPI.create(facultyData);
+      }
+      
       setOpen(false);
+      setEditingFaculty(null);
       setFormData({
         name: '',
         email: '',
@@ -75,8 +92,32 @@ function Faculty() {
       });
       fetchFaculty();
     } catch (error) {
-      console.error('Error creating faculty:', error);
+      console.error('Error saving faculty:', error);
     }
+  };
+
+  const handleEdit = (member) => {
+    setEditingFaculty(member);
+    setFormData({
+      name: member.name,
+      email: member.email,
+      subjects: member.subjects || [],
+      max_hours_per_day: member.max_hours_per_day.toString(),
+      avg_leaves_per_month: member.avg_leaves_per_month.toString()
+    });
+    setOpen(true);
+  };
+
+  const handleAdd = () => {
+    setEditingFaculty(null);
+    setFormData({
+      name: '',
+      email: '',
+      subjects: [],
+      max_hours_per_day: '6',
+      avg_leaves_per_month: '2'
+    });
+    setOpen(true);
   };
 
   const handleDelete = async (id) => {
@@ -90,17 +131,47 @@ function Faculty() {
     }
   };
 
+  const handleCsvUpload = async () => {
+    if (!csvFile) return;
+    const formData = new FormData();
+    formData.append('file', csvFile);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/faculty/upload-csv', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      const result = await response.json();
+      setCsvResult(result);
+      if (response.ok) {
+        await fetchFaculty(); // Refresh data immediately
+        setCsvFile(null);
+      }
+    } catch (error) {
+      setCsvResult({ message: 'Upload failed', errors: [error.message] });
+    }
+  };
+
+  const downloadTemplate = () => {
+    const csvContent = "name,email,subjects,max_hours_per_day,avg_leaves_per_month\nExample Faculty,faculty@example.edu,SUBJ001;SUBJ002,6,2";
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'faculty_template.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <Layout>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">Faculty</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setOpen(true)}
-        >
-          Add Faculty
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button variant="outlined" startIcon={<UploadIcon />} onClick={() => setCsvOpen(true)}>Upload CSV</Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={handleAdd}>Add Faculty</Button>
+        </Box>
       </Box>
 
       <TableContainer component={Paper}>
@@ -128,13 +199,21 @@ function Faculty() {
                 <TableCell>{member.max_hours_per_day}</TableCell>
                 <TableCell>{member.avg_leaves_per_month}</TableCell>
                 <TableCell>
-                  <Button 
+                  <IconButton 
+                    color="primary" 
+                    size="small"
+                    onClick={() => handleEdit(member)}
+                    sx={{ mr: 1 }}
+                  >
+                    <EditIcon />
+                  </IconButton>
+                  <IconButton 
                     color="error" 
                     size="small"
                     onClick={() => handleDelete(member._id)}
                   >
-                    Delete
-                  </Button>
+                    <DeleteIcon />
+                  </IconButton>
                 </TableCell>
               </TableRow>
             ))}
@@ -144,7 +223,7 @@ function Faculty() {
 
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
         <form onSubmit={handleSubmit}>
-          <DialogTitle>Add New Faculty</DialogTitle>
+          <DialogTitle>{editingFaculty ? 'Edit Faculty' : 'Add New Faculty'}</DialogTitle>
           <DialogContent>
             <TextField
               fullWidth
@@ -202,10 +281,33 @@ function Faculty() {
             />
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" variant="contained">Add</Button>
+            <Button onClick={() => { setOpen(false); setEditingFaculty(null); }}>Cancel</Button>
+            <Button type="submit" variant="contained">{editingFaculty ? 'Update' : 'Add'}</Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      {/* CSV Upload Dialog */}
+      <Dialog open={csvOpen} onClose={() => setCsvOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Upload Faculty CSV</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              CSV Format: name,email,subjects,max_hours_per_day,avg_leaves_per_month
+            </Typography>
+            <Button variant="outlined" size="small" onClick={downloadTemplate}>Download Template</Button>
+          </Box>
+          <input type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files[0])} />
+          {csvResult && (
+            <Alert severity={csvResult.errors?.length > 0 ? "warning" : "success"} sx={{ mt: 2 }}>
+              <Typography variant="body2">{csvResult.message}</Typography>
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setCsvOpen(false); setCsvResult(null); setCsvFile(null); }}>Cancel</Button>
+          <Button onClick={handleCsvUpload} variant="contained" disabled={!csvFile}>Upload</Button>
+        </DialogActions>
       </Dialog>
     </Layout>
   );

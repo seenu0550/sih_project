@@ -31,12 +31,27 @@ function Login() {
     username: '',
     email: '',
     password: '',
-    role: 'student'
+    role: 'student',
+    batch_id: ''
   });
+  const [batches, setBatches] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Fetch batches for student registration
+    const fetchBatches = async () => {
+      try {
+        const response = await authAPI.getBatches();
+        setBatches(response.data);
+      } catch (error) {
+        console.error('Error fetching batches:', error);
+      }
+    };
+    fetchBatches();
+  }, []);
 
   useEffect(() => {
     // Create floating particles
@@ -68,32 +83,33 @@ function Login() {
     setLoading(true);
     setError('');
 
-    // Retry login up to 2 times if it fails
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = await authAPI.login(loginData);
-        const userRole = loginData.username === 'admin' ? 'admin' : 'student';
-        login(response.data.access_token, { username: loginData.username, role: userRole });
+    try {
+      const response = await authAPI.login(loginData);
+      const userRole = loginData.username === 'admin' ? 'admin' : 'student';
+      const userData = { username: loginData.username, role: userRole };
+      
+      // Set auth data first
+      login(response.data.access_token, userData);
+      
+      // Small delay to ensure state is updated
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Navigate based on role
+      if (userRole === 'student') {
+        navigate('/batch-timetable');
+      } else {
         navigate('/');
-        return;
-      } catch (err) {
-        console.error(`Login attempt ${attempt} error:`, err);
-        
-        if (attempt === 2) {
-          // Final attempt failed
-          if (err.code === 'ERR_NETWORK') {
-            setError('Cannot connect to server. Please make sure the backend is running on port 8000.');
-          } else {
-            setError(err.response?.data?.detail || 'Login failed. Please check your credentials.');
-          }
-        } else {
-          // Wait before retry
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
       }
+    } catch (err) {
+      console.error('Login error:', err);
+      if (err.code === 'ERR_NETWORK') {
+        setError('Cannot connect to server. Please make sure the backend is running on port 8000.');
+      } else {
+        setError(err.response?.data?.detail || 'Login failed. Please check your credentials.');
+      }
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   const handleRegister = async (e) => {
@@ -110,8 +126,18 @@ function Login() {
       console.error('Registration error:', err);
       if (err.code === 'ERR_NETWORK') {
         setError('Cannot connect to server. Please make sure the backend is running on port 8000.');
+      } else if (err.response?.data?.detail) {
+        // Handle validation errors
+        if (Array.isArray(err.response.data.detail)) {
+          const errorMessages = err.response.data.detail.map(error => 
+            typeof error === 'string' ? error : error.msg || 'Validation error'
+          ).join(', ');
+          setError(errorMessages);
+        } else {
+          setError(String(err.response.data.detail));
+        }
       } else {
-        setError(err.response?.data?.detail || 'Registration failed. Please try again.');
+        setError('Registration failed. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -321,8 +347,10 @@ function Login() {
               }}
             />
             <FormControl fullWidth margin="normal">
-              <InputLabel>Role</InputLabel>
+              <InputLabel id="role-label">Role</InputLabel>
               <Select
+                labelId="role-label"
+                label="Role"
                 value={registerData.role}
                 onChange={(e) => setRegisterData({ ...registerData, role: e.target.value })}
                 sx={{
@@ -334,6 +362,31 @@ function Login() {
                 <MenuItem value="admin">Admin</MenuItem>
               </Select>
             </FormControl>
+            {registerData.role === 'student' && (
+              <FormControl fullWidth margin="normal">
+                <InputLabel id="batch-label">Select Batch</InputLabel>
+                <Select
+                  labelId="batch-label"
+                  label="Select Batch"
+                  value={registerData.batch_id}
+                  onChange={(e) => setRegisterData({ ...registerData, batch_id: e.target.value })}
+                  required
+                  sx={{
+                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                    borderRadius: 2
+                  }}
+                >
+                  <MenuItem value="">
+                    <em>Choose your batch</em>
+                  </MenuItem>
+                  {batches.map((batch) => (
+                    <MenuItem key={batch._id} value={batch._id}>
+                      {batch.name} - {batch.department} (Sem {batch.semester})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
             <Button
               type="submit"
               fullWidth

@@ -304,6 +304,7 @@ function Dashboard() {
                 onClick={() => navigate('/timetables')}
               />
             </Grid>
+            
           </>
         )}
       </Grid>
@@ -449,11 +450,11 @@ function Dashboard() {
                 <CardContent sx={{ p: 4 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
                     <TrendingUpIcon sx={{ fontSize: 40, mr: 2 }} />
-                    <Typography variant="h5" sx={{ fontWeight: 'bold' }}>👥 Batch Timetable</Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 'bold' }}>👥 My Batch Timetable</Typography>
                   </Box>
                   <Typography variant="body1" sx={{ opacity: 0.9, lineHeight: 1.7, mb: 3 }}>
-                    Check your batch's complete timetable, find classmates' schedules, 
-                    and coordinate study groups. Perfect for collaborative learning!
+                    Check your batch's complete timetable and class schedules. 
+                    If no timetable is shown, it means your schedule hasn't been allocated yet.
                   </Typography>
                   <Button
                     variant="contained"
@@ -463,7 +464,7 @@ function Dashboard() {
                       borderRadius: 2
                     }}
                   >
-                    Check Batch 👨🎓
+                    Check My Batch 👨🎓
                   </Button>
                 </CardContent>
               </Card>
@@ -597,7 +598,7 @@ function Dashboard() {
                     fontWeight: 600
                   }}
                 >
-                  Batch Timetable 👥
+                  My Batch Timetable 👥
                 </Button>
               </Grid>
               <Grid item xs={12} sm={6} md={4}>

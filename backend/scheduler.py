@@ -3,334 +3,373 @@ from models import TimetableSlot, TimetableRequest
 from collections import defaultdict
 import random
 
+
 class TimetableScheduler:
     LUNCH_TIME = '13:00'
-    
+    DEFAULT_FACULTY_DAILY_LIMIT = 6
+    DEFAULT_STUDENT_COUNT = 30
+    DEFAULT_CLASSES_PER_WEEK = 3
+    DEFAULT_DURATION = 1
+
     def __init__(self):
         pass
-    
-    def generate_timetable(self, request: TimetableRequest, classrooms: List[Dict], 
-                          subjects: List[Dict], faculty: List[Dict], batches: List[Dict]) -> List[TimetableSlot]:
-        """Generate timetable with strict anti-continuous allocation"""
-        
-        target_batches = [b for b in batches if b['semester'] == request.semester and b['department'] == request.department]
+
+    # ======================================================
+    # PUBLIC API
+    # ======================================================
+    def generate_timetable(
+        self,
+        request: TimetableRequest,
+        classrooms: List[Dict],
+        subjects: List[Dict],
+        faculty: List[Dict],
+        batches: List[Dict],
+    ) -> List[TimetableSlot]:
+
+        batches = [b.copy() for b in batches]
+
+        target_batches = [
+            b for b in batches
+            if b['semester'] == request.semester
+            and b['department'] == request.department
+        ]
         if not target_batches:
             return []
-        
+
         valid_time_slots = [t for t in request.time_slots if t != self.LUNCH_TIME]
-        
-        # Create a comprehensive schedule plan first
-        schedule_plan = self._create_schedule_plan(target_batches, subjects, request.working_days, valid_time_slots)
-        
-        # Now assign faculty and classrooms to the plan
-        slots = self._assign_resources(schedule_plan, faculty, classrooms, valid_time_slots)
-        
-        return slots
-    
-    def _create_schedule_plan(self, batches: List[Dict], subjects: List[Dict], 
-                            working_days: List[str], time_slots: List[str]) -> List[Dict]:
-        """Create a schedule plan with proper subject distribution"""
-        
-        # Calculate subject requirements
-        subject_sessions = []
-        
-        for batch in batches:
-            batch_subjects = [s for s in subjects if s['code'] in batch['subjects']]
-            
-            for subject in batch_subjects:
-                classes_needed = subject.get('classes_per_week', 3)
-                
-                for session_num in range(classes_needed):
-                    subject_sessions.append({
-                        'subject_code': subject['code'],
-                        'subject_name': subject['name'],
-                        'subject_type': subject.get('type', 'theory'),
-                        'batch': batch,
-                        'session_id': f"{subject['code']}_{batch['name']}_{session_num}"
-                    })
-        
-        # Create time slots grid
-        all_time_slots = []
-        for day in working_days:
-            for time in time_slots:
-                all_time_slots.append({'day': day, 'time': time, 'assigned': None})
-        
-        # Distribute subjects across time slots with anti-continuous logic
-        random.shuffle(subject_sessions)  # Initial randomization
-        
-        scheduled_plan = []
-        used_slots = set()
-        
-        # For each subject session, find the best non-continuous slot
-        for session in subject_sessions:
-            best_slot = self._find_best_time_slot(
-                session, all_time_slots, scheduled_plan, time_slots, used_slots
-            )
-            
-            if best_slot:
-                scheduled_plan.append({
-                    'day': best_slot['day'],
-                    'time': best_slot['time'],
-                    'subject_code': session['subject_code'],
-                    'subject_name': session['subject_name'],
-                    'subject_type': session['subject_type'],
-                    'batch': session['batch'],
-                    'session_id': session['session_id']
-                })
-                used_slots.add((best_slot['day'], best_slot['time']))
-        
-        return scheduled_plan
-    
-    def _find_best_time_slot(self, session: Dict, available_slots: List[Dict], 
-                           current_plan: List[Dict], time_slots: List[str], 
-                           used_slots: Set[Tuple]) -> Dict:
-        """Find best time slot avoiding continuous allocation"""
-        
-        subject_code = session['subject_code']
-        
-        # Get already scheduled slots for this subject
-        subject_scheduled_slots = [
-            (p['day'], p['time']) for p in current_plan 
-            if p['subject_code'] == subject_code
-        ]
-        
-        # Score each available slot
-        slot_scores = []
-        
-        for slot in available_slots:
-            if (slot['day'], slot['time']) in used_slots:
-                continue
-            
-            score = self._calculate_slot_score(
-                slot, subject_code, subject_scheduled_slots, time_slots, current_plan
-            )
-            
-            if score > 0:  # Only consider valid slots
-                slot_scores.append((slot, score))
-        
-        if not slot_scores:
-            return None
-        
-        # Sort by score (higher is better) and return best slot
-        slot_scores.sort(key=lambda x: x[1], reverse=True)
-        return slot_scores[0][0]
-    
-    def _calculate_slot_score(self, slot: Dict, subject_code: str, 
-                            existing_slots: List[Tuple], time_slots: List[str],
-                            current_plan: List[Dict]) -> float:
-        """Calculate score for a time slot (higher = better, 0 = invalid)"""
-        
-        day = slot['day']
-        time = slot['time']
-        time_index = time_slots.index(time)
-        
-        score = 100.0  # Base score
-        
-        # Check for continuous allocation with existing slots of same subject
-        for existing_day, existing_time in existing_slots:
-            if existing_day == day:  # Same day
-                existing_index = time_slots.index(existing_time)
-                
-                # Heavily penalize adjacent time slots
-                if abs(time_index - existing_index) == 1:
-                    return 0  # Invalid - continuous allocation
-                
-                # Penalize close time slots
-                if abs(time_index - existing_index) == 2:
-                    score -= 40
-        
-        # Check day distribution - prefer spreading across different days
-        days_used = set(existing_day for existing_day, _ in existing_slots)
-        if day not in days_used:
-            score += 30  # Bonus for new day
-        
-        # Prefer middle slots over edge slots for better distribution
-        if 1 <= time_index <= len(time_slots) - 2:
-            score += 10
-        
-        # Check subject density in this day
-        subjects_this_day = [p['subject_code'] for p in current_plan if p['day'] == day]
-        if subject_code in subjects_this_day:
-            score -= 20  # Penalty for same subject already scheduled this day
-        
-        # Prefer balanced time distribution
-        time_usage = defaultdict(int)
-        for p in current_plan:
-            time_usage[p['time']] += 1
-        
-        current_time_usage = time_usage[time]
-        if current_time_usage == 0:
-            score += 15  # Bonus for unused time slots
-        else:
-            score -= current_time_usage * 5  # Penalty for overused times
-        
-        return score
-    
-    def _assign_resources(self, schedule_plan: List[Dict], faculty: List[Dict], 
-                         classrooms: List[Dict], time_slots: List[str]) -> List[TimetableSlot]:
-        """Assign faculty and classrooms to the schedule plan"""
-        
-        slots = []
-        faculty_schedule = defaultdict(lambda: defaultdict(set))
-        classroom_schedule = defaultdict(lambda: defaultdict(set))
-        faculty_subject_rotation = defaultdict(lambda: defaultdict(int))
-        
-        # Sort plan to prioritize difficult-to-schedule items
-        schedule_plan.sort(key=lambda x: (x['day'], x['time']))
-        
-        for plan_item in schedule_plan:
-            day = plan_item['day']
-            time = plan_item['time']
-            subject_code = plan_item['subject_code']
-            batch = plan_item['batch']
-            
-            # Find best faculty for this assignment
-            best_faculty = self._find_best_faculty(
-                subject_code, faculty, faculty_schedule, faculty_subject_rotation,
-                day, time, time_slots
-            )
-            
-            if not best_faculty:
-                continue  # Skip if no faculty available
-            
-            # Find available classroom
-            best_classroom = self._find_best_classroom(
-                plan_item['subject_type'], classrooms, classroom_schedule,
-                day, time, batch.get('student_count', 30)
-            )
-            
-            if not best_classroom:
-                continue  # Skip if no classroom available
-            
-            # Create the slot
-            slot = TimetableSlot(
-                day=day,
-                time=time,
-                subject_code=subject_code,
-                faculty_name=best_faculty['name'],
-                classroom_name=best_classroom['name'],
-                batch_name=batch['name']
-            )
-            
-            slots.append(slot)
-            
-            # Update tracking
-            faculty_schedule[best_faculty['name']][day].add(time)
-            classroom_schedule[best_classroom['name']][day].add(time)
-            faculty_subject_rotation[best_faculty['name']][subject_code] += 1
-        
-        # Fill remaining gaps with intelligent rotation
-        self._fill_gaps(slots, faculty, classrooms, schedule_plan, faculty_schedule, classroom_schedule, time_slots)
-        
-        # Additional gap filling for better coverage
-        self._fill_subject_gaps(slots, faculty, classrooms, schedule_plan, faculty_schedule, classroom_schedule, time_slots)
-        
-        # Fill all remaining empty slots
-        self._fill_all_remaining_gaps(slots, faculty, classrooms, schedule_plan, faculty_schedule, classroom_schedule, time_slots)
-        
-        return slots
-    
-    def _find_best_faculty(self, subject_code: str, faculty: List[Dict],
-                          faculty_schedule: Dict, faculty_subject_rotation: Dict,
-                          day: str, time: str, time_slots: List[str]) -> Dict:
-        """Find best faculty avoiding continuous allocation"""
-        
-        available_faculty = []
-        
-        for f in faculty:
-            # Check if faculty can teach this subject
-            if subject_code not in f.get('subjects', []):
-                continue
-            
-            faculty_name = f['name']
-            
-            # Check availability
-            if time in faculty_schedule[faculty_name][day]:
-                continue
-            
-            # Check daily load limit
-            if len(faculty_schedule[faculty_name][day]) >= 4:
-                continue
-            
-            # Check for continuous teaching (same faculty, same day)
-            is_continuous = self._would_be_continuous(
-                faculty_schedule[faculty_name][day], time, time_slots
-            )
-            
-            if is_continuous:
-                continue  # Skip continuous allocation
-            
-            available_faculty.append(f)
-        
-        if not available_faculty:
-            return None
-        
-        # Select faculty with least teaching load for this subject (rotation)
-        best_faculty = min(
-            available_faculty,
-            key=lambda f: (
-                faculty_subject_rotation[f['name']][subject_code],  # Subject rotation
-                len(faculty_schedule[f['name']][day])  # Daily load
-            )
+
+        schedule_plan = self._create_schedule_plan(
+            target_batches,
+            subjects,
+            request.working_days,
+            valid_time_slots
         )
         
-        return best_faculty
-    
-    def _would_be_continuous(self, faculty_day_schedule: Set[str], 
-                           new_time: str, time_slots: List[str]) -> bool:
-        """Check if adding new_time would create continuous allocation"""
+        print(f"DEBUG: Schedule plan created with {len(schedule_plan)} sessions")
+        if not schedule_plan:
+            print("DEBUG: No schedule plan created - returning empty")
+            return []
+
+        slots = self._assign_resources(
+            schedule_plan,
+            faculty,
+            classrooms,
+            valid_time_slots
+        )
         
-        if not faculty_day_schedule:
-            return False
-        
-        try:
-            new_time_index = time_slots.index(new_time)
+        print(f"DEBUG: Resource assignment completed with {len(slots)} slots")
+        return slots
+
+    # ======================================================
+    # STEP 1 — SUBJECT & TIME PLANNING
+    # ======================================================
+    def _create_schedule_plan(
+        self,
+        batches: List[Dict],
+        subjects: List[Dict],
+        working_days: List[str],
+        time_slots: List[str]
+    ) -> List[Dict]:
+
+        lab_sessions = []
+        theory_sessions = []
+
+        # Create sessions only for subjects assigned to each batch
+        for batch in batches:
+            batch_subjects = [s for s in subjects if s['code'] in batch['subjects']]
+            print(f"DEBUG: Batch {batch['name']} has {len(batch_subjects)} subjects: {[s['code'] for s in batch_subjects]}")
             
-            for scheduled_time in faculty_day_schedule:
-                scheduled_index = time_slots.index(scheduled_time)
-                
-                # Check if adjacent (continuous)
-                if abs(new_time_index - scheduled_index) == 1:
-                    return True
-                    
-        except ValueError:
-            pass
-        
-        return False
-    
-    def _find_best_classroom(self, subject_type: str, classrooms: List[Dict],
-                           classroom_schedule: Dict, day: str, time: str,
-                           student_count: int) -> Dict:
-        """Find best available classroom"""
-        
-        available_classrooms = []
-        
-        for classroom in classrooms:
-            # Check availability
-            if time in classroom_schedule[classroom['name']][day]:
-                continue
-            
-            # Check capacity
-            if classroom['capacity'] < student_count:
-                continue
-            
-            available_classrooms.append(classroom)
-        
-        if not available_classrooms:
-            return None
-        
-        # Prefer classrooms that match subject type
-        type_matched = [
-            c for c in available_classrooms
-            if (subject_type == 'practical' and c.get('type') == 'lab') or
-               (subject_type == 'theory' and c.get('type') in ['lecture', 'seminar'])
+            for subject in batch_subjects:
+                classes = subject.get('classes_per_week', self.DEFAULT_CLASSES_PER_WEEK)
+                duration = subject.get('duration', 1)
+                s_type = subject.get('type', 'theory')
+                print(f"DEBUG: Subject {subject['code']} - type: {s_type}, classes: {classes}, duration: {duration}")
+
+                if s_type in ['lab', 'practical']:
+                    # Convert duration from minutes to number of time slots (assuming 60 min per slot)
+                    duration_slots = max(1, duration // 60) if duration > 60 else 1
+                    sessions = classes
+                    for i in range(sessions):
+                        lab_sessions.append({
+                            'subject_code': subject['code'],
+                            'subject_name': subject['name'],
+                            'subject_type': s_type,
+                            'duration': duration_slots,
+                            'batch': batch.copy(),
+                            'session_id': f"{subject['code']}_{batch['name']}_{i}"
+                        })
+                else:
+                    for i in range(classes):
+                        theory_sessions.append({
+                            'subject_code': subject['code'],
+                            'subject_name': subject['name'],
+                            'subject_type': s_type,
+                            'duration': 1,
+                            'batch': batch.copy(),
+                            'session_id': f"{subject['code']}_{batch['name']}_{i}"
+                        })
+
+        # Shuffle sessions for variation
+        random.shuffle(lab_sessions)
+        random.shuffle(theory_sessions)
+
+        all_slots = [
+            {'day': d, 'time': t}
+            for d in working_days
+            for t in time_slots
         ]
+        print(f"DEBUG: Available slots: {len(all_slots)} ({len(working_days)} days x {len(time_slots)} times)")
+
+        used = set()
+        plan = []
+        subject_day_slots = defaultdict(lambda: defaultdict(list))
+
+        # First allocate lab sessions (continuous slots)
+        for session in lab_sessions:
+            if session['duration'] > 1:
+                slots = self._find_continuous_slots(session, all_slots, used, time_slots)
+                if slots:
+                    for i, s in enumerate(slots):
+                        plan.append({
+                            **session,
+                            'day': s['day'],
+                            'time': s['time'],
+                            'part': i + 1
+                        })
+                        used.add((s['day'], s['time']))
+                        subject_day_slots[session['subject_code']][s['day']].append(s['time'])
+                    print(f"DEBUG: Allocated continuous slots for {session['subject_code']}")
+                else:
+                    print(f"DEBUG: Failed to find continuous slots for {session['subject_code']}")
+            else:
+                slot = self._find_single_slot(session, all_slots, used, subject_day_slots)
+                if slot:
+                    plan.append({
+                        **session,
+                        'day': slot['day'],
+                        'time': slot['time']
+                    })
+                    used.add((slot['day'], slot['time']))
+                    subject_day_slots[session['subject_code']][slot['day']].append(slot['time'])
+                    print(f"DEBUG: Allocated single slot for {session['subject_code']}")
+                else:
+                    print(f"DEBUG: Failed to find single slot for {session['subject_code']}")
+
+        # Then allocate theory sessions (non-continuous)
+        for session in theory_sessions:
+            slot = self._find_single_slot(session, all_slots, used, subject_day_slots)
+            if slot:
+                plan.append({
+                    **session,
+                    'day': slot['day'],
+                    'time': slot['time']
+                })
+                used.add((slot['day'], slot['time']))
+                subject_day_slots[session['subject_code']][slot['day']].append(slot['time'])
+                print(f"DEBUG: Allocated theory slot for {session['subject_code']}")
+            else:
+                print(f"DEBUG: Failed to find theory slot for {session['subject_code']}")
+
+        # Fill remaining empty slots by repeating subjects
+        remaining_slots = [s for s in all_slots if (s['day'], s['time']) not in used]
+        if remaining_slots and (lab_sessions or theory_sessions):
+            all_sessions = lab_sessions + theory_sessions
+            session_index = 0
+            
+            for slot in remaining_slots:
+                if session_index >= len(all_sessions):
+                    session_index = 0
+                
+                session = all_sessions[session_index].copy()
+                session['session_id'] = f"{session['subject_code']}_{session['batch']['name']}_extra_{len(plan)}"
+                
+                plan.append({
+                    **session,
+                    'day': slot['day'],
+                    'time': slot['time']
+                })
+                used.add((slot['day'], slot['time']))
+                session_index += 1
+                print(f"DEBUG: Filled empty slot with {session['subject_code']}")
+
+        print(f"DEBUG: Final plan has {len(plan)} scheduled sessions")
+        return plan
+
+    def _find_continuous_slots(self, session, slots, used, time_slots):
+        duration = session['duration']
+
+        by_day = defaultdict(list)
+        for s in slots:
+            if (s['day'], s['time']) not in used:
+                by_day[s['day']].append(s)
+
+        for day, day_slots in by_day.items():
+            day_slots.sort(key=lambda s: time_slots.index(s['time']))
+            for i in range(len(day_slots) - duration + 1):
+                block = day_slots[i:i + duration]
+
+                idxs = [time_slots.index(x['time']) for x in block]
+                if idxs != list(range(idxs[0], idxs[0] + duration)):
+                    continue
+
+                if self._crosses_lunch(idxs, time_slots):
+                    continue
+
+                return block
+        return None
+
+    def _crosses_lunch(self, indices, time_slots):
+        for i in indices:
+            if i + 1 < len(time_slots):
+                if time_slots[i] == '12:00' and time_slots[i + 1] == '14:00':
+                    return True
+        return False
+
+    def _find_single_slot(self, session, slots, used, subject_day_slots=None):
+        subject_code = session['subject_code']
+        subject_type = session['subject_type']
         
-        if type_matched:
-            return type_matched[0]
+        # For theory subjects, avoid continuous allocation
+        if subject_type == 'theory' and subject_day_slots:
+            non_continuous_slots = []
+            continuous_slots = []
+            
+            for s in slots:
+                if (s['day'], s['time']) in used:
+                    continue
+                    
+                # Check if this slot would be continuous with existing slots
+                existing_times = subject_day_slots[subject_code][s['day']]
+                is_continuous = False
+                
+                if existing_times:
+                    time_idx = slots.index(s) if s in slots else -1
+                    for existing_time in existing_times:
+                        existing_slot = next((slot for slot in slots if slot['day'] == s['day'] and slot['time'] == existing_time), None)
+                        if existing_slot:
+                            existing_idx = slots.index(existing_slot) if existing_slot in slots else -1
+                            if abs(time_idx - existing_idx) == 1:
+                                is_continuous = True
+                                break
+                
+                if not is_continuous:
+                    non_continuous_slots.append(s)
+                else:
+                    continuous_slots.append(s)
+            
+            # Prefer non-continuous slots for theory subjects
+            return non_continuous_slots[0] if non_continuous_slots else (continuous_slots[0] if continuous_slots else None)
         
-        return available_classrooms[0]
-    
+        # For lab subjects or when no subject_day_slots provided, find any available slot
+        for s in slots:
+            if (s['day'], s['time']) not in used:
+                return s
+        return None
+
+    # ======================================================
+    # STEP 2 — FACULTY + CLASSROOM ASSIGNMENT (STRICT)
+    # ======================================================
+    def _assign_resources(self, plan, faculty, classrooms, time_slots):
+
+        slots = []
+        faculty_schedule = defaultdict(lambda: defaultdict(set))
+        room_schedule = defaultdict(lambda: defaultdict(set))
+
+        # 🔐 HARD LOCK MAP
+        faculty_subject_batch = {}
+
+        lab_subjects = {
+            p['subject_code'] for p in plan
+            if p['subject_type'] in ['lab', 'practical']
+        }
+
+        plan.sort(key=lambda x: (x['day'], x['time']))
+
+        for p in plan:
+            key = (p['subject_code'], p['batch']['name'])
+
+            if key in faculty_subject_batch:
+                fname = faculty_subject_batch[key]
+                fac = next((f for f in faculty if f['name'] == fname), None)
+                if not fac:
+                    continue
+                if p['time'] in faculty_schedule[fname][p['day']]:
+                    continue
+            else:
+                fac = self._find_best_faculty(
+                    p, faculty, faculty_schedule, time_slots, lab_subjects
+                )
+                if not fac:
+                    continue
+                faculty_subject_batch[key] = fac['name']
+
+            room = self._find_best_classroom(
+                p['subject_type'],
+                classrooms,
+                room_schedule,
+                p['day'],
+                p['time'],
+                p['batch'].get('student_count', self.DEFAULT_STUDENT_COUNT)
+            )
+            if not room:
+                continue
+
+            subject_code = p['subject_code']
+            if p.get('duration', 1) > 1 and 'part' in p:
+                subject_code += f" (Part {p['part']})"
+
+            slots.append(TimetableSlot(
+                day=p['day'],
+                time=p['time'],
+                subject_code=subject_code,
+                faculty_name=fac['name'],
+                classroom_name=room['name'],
+                batch_name=p['batch']['name']
+            ))
+
+            faculty_schedule[fac['name']][p['day']].add(p['time'])
+            room_schedule[room['name']][p['day']].add(p['time'])
+
+        return slots
+
+    def _find_best_faculty(self, p, faculty, faculty_schedule, time_slots, lab_subjects):
+        # Find available faculty for the subject, maintaining consistency
+        for f in faculty:
+            if p['subject_code'] not in f.get('subjects', []):
+                continue
+            if p['time'] in faculty_schedule[f['name']][p['day']]:
+                continue
+            return f
+        return None
+
+    def _is_continuous(self, day_times, new_time, time_slots):
+        if not day_times:
+            return False
+        idx = time_slots.index(new_time)
+        for t in day_times:
+            if abs(idx - time_slots.index(t)) == 1:
+                return True
+        return False
+
+    def _find_best_classroom(
+        self,
+        subject_type,
+        classrooms,
+        room_schedule,
+        day,
+        time,
+        students
+    ):
+        for c in classrooms:
+            if time in room_schedule[c['name']][day]:
+                continue
+            if c['capacity'] < students:
+                continue
+            if subject_type == 'lab' and c.get('type') != 'lab':
+                continue
+            return c
+        return None
+
     def generate_multiple_options(self, request: TimetableRequest, classrooms: List[Dict], 
                                 subjects: List[Dict], faculty: List[Dict], 
                                 batches: List[Dict]) -> List[List[TimetableSlot]]:
@@ -338,55 +377,44 @@ class TimetableScheduler:
         options = []
         
         for i in range(3):
-            # Set different random seeds for variation
-            random.seed(i * 456 + 789)
+            # Use different random seeds for variation
+            random.seed(i * 123 + 456)
             
-            timetable = self.generate_timetable(request, classrooms, subjects, faculty, batches)
+            # Shuffle the order of subjects and sessions for variation
+            subjects_copy = subjects.copy()
+            random.shuffle(subjects_copy)
             
+            # Shuffle working days for different day arrangements
+            working_days = request.working_days.copy()
+            if i > 0:  # Keep first option with original order
+                random.shuffle(working_days)
+            
+            # Create modified request with shuffled days
+            modified_request = TimetableRequest(
+                name=request.name,
+                semester=request.semester,
+                department=request.department,
+                max_classes_per_day=request.max_classes_per_day,
+                working_days=working_days,
+                time_slots=request.time_slots
+            )
+            
+            timetable = self.generate_timetable(modified_request, classrooms, subjects_copy, faculty, batches)
             if timetable:
                 options.append(timetable)
         
-        # Reset random seed
         random.seed()
         return options
-    
+
     def validate_timetable(self, slots: List[TimetableSlot]) -> Dict[str, List[str]]:
         """Validate timetable for any conflicts"""
         issues = {
             'faculty_conflicts': [],
             'classroom_conflicts': [],
-            'heavy_load': [],
             'continuous_allocation': [],
             'warnings': []
         }
         
-        # Group by faculty and day
-        faculty_daily = defaultdict(lambda: defaultdict(list))
-        
-        for slot in slots:
-            faculty_daily[slot.faculty_name][slot.day].append(slot)
-        
-        # Check for continuous allocation
-        time_slots = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00']
-        
-        for faculty_name, daily_schedule in faculty_daily.items():
-            for day, day_slots in daily_schedule.items():
-                # Sort by time
-                day_slots.sort(key=lambda x: time_slots.index(x.time))
-                
-                # Check for continuous slots
-                for i in range(len(day_slots) - 1):
-                    current_time_idx = time_slots.index(day_slots[i].time)
-                    next_time_idx = time_slots.index(day_slots[i + 1].time)
-                    
-                    if next_time_idx == current_time_idx + 1:  # Continuous
-                        issues['continuous_allocation'].append(
-                            f"{faculty_name} has continuous classes on {day}: "
-                            f"{day_slots[i].time}({day_slots[i].subject_code}) -> "
-                            f"{day_slots[i + 1].time}({day_slots[i + 1].subject_code})"
-                        )
-        
-        # Standard conflict checking
         schedule_grid = defaultdict(lambda: defaultdict(list))
         for slot in slots:
             schedule_grid[slot.day][slot.time].append(slot)
@@ -418,448 +446,3 @@ class TimetableScheduler:
                         )
         
         return issues
-    
-    def get_sample_data(self) -> Dict:
-        """Generate sample data for testing the scheduler"""
-        
-        # Sample Classrooms
-        classrooms = [
-            {'name': 'LH-101', 'capacity': 60, 'type': 'lecture'},
-            {'name': 'LH-102', 'capacity': 80, 'type': 'lecture'},
-            {'name': 'SR-201', 'capacity': 40, 'type': 'seminar'},
-            {'name': 'LAB-301', 'capacity': 30, 'type': 'lab'},
-            {'name': 'LAB-302', 'capacity': 35, 'type': 'lab'},
-            {'name': 'LH-103', 'capacity': 100, 'type': 'lecture'}
-        ]
-        
-        # Sample Subjects
-        subjects = [
-            {'code': 'CS201', 'name': 'Advanced Programming', 'type': 'theory', 'classes_per_week': 3, 'department': 'CSE'},
-            {'code': 'CS202', 'name': 'Algorithms', 'type': 'theory', 'classes_per_week': 3, 'department': 'CSE'},
-            {'code': 'CS203', 'name': 'Software Engineering', 'type': 'theory', 'classes_per_week': 2, 'department': 'CSE'},
-            {'code': 'CS301', 'name': 'Machine Learning', 'type': 'theory', 'classes_per_week': 3, 'department': 'CSE'},
-            {'code': 'CS401', 'name': 'Computer Networks', 'type': 'theory', 'classes_per_week': 3, 'department': 'CSE'},
-            {'code': 'CS402', 'name': 'Database Management', 'type': 'theory', 'classes_per_week': 2, 'department': 'CSE'},
-            {'code': 'CS403', 'name': 'Web Development', 'type': 'practical', 'classes_per_week': 2, 'department': 'CSE'},
-            {'code': 'MA201', 'name': 'Discrete Mathematics', 'type': 'theory', 'classes_per_week': 4, 'department': 'MATH'}
-        ]
-        
-        # Enhanced Faculty with broader subject coverage
-        faculty = [
-            {'name': 'Ram', 'department': 'CSE', 'subjects': ['CS401', 'CS201', 'CS202']},
-            {'name': 'Manoj', 'department': 'CSE', 'subjects': ['CS201', 'CS203', 'CS301']},
-            {'name': 'Koushe', 'department': 'CSE', 'subjects': ['CS202', 'CS203', 'CS401']},
-            {'name': 'John', 'department': 'CSE', 'subjects': ['CS203', 'CS301', 'CS402']},
-            {'name': 'RC', 'department': 'CSE', 'subjects': ['CS301', 'CS401', 'CS403']},
-            {'name': 'Charan', 'department': 'CSE', 'subjects': ['CS402', 'CS403', 'CS201']},
-            {'name': 'akhil', 'department': 'CSE', 'subjects': ['CS403', 'CS201', 'CS202']},
-            {'name': 'Prof. Math', 'department': 'MATH', 'subjects': ['MA201']},
-        ]
-        
-        # Sample Batches
-        batches = [
-            {
-                'name': 'CSE-1',
-                'department': 'CSE',
-                'semester': 1,
-                'student_count': 45,
-                'subjects': ['CS201', 'CS202', 'CS203', 'CS301', 'MA201']
-            }
-        ]
-        
-        return {
-            'classrooms': classrooms,
-            'subjects': subjects,
-            'faculty': faculty,
-            'batches': batches
-        }
-    
-    def _fill_gaps(self, slots: List[TimetableSlot], faculty: List[Dict], 
-                   classrooms: List[Dict], original_plan: List[Dict],
-                   faculty_schedule: Dict, classroom_schedule: Dict, 
-                   time_slots: List[str]):
-        """Fill empty slots with intelligent faculty rotation"""
-        
-        # Get all days from original plan
-        all_days = set(item['day'] for item in original_plan)
-        
-        # Find scheduled slots
-        scheduled_slots = set((slot.day, slot.time) for slot in slots)
-        
-        # Track faculty workload per subject for rotation
-        faculty_subject_load = defaultdict(lambda: defaultdict(int))
-        for slot in slots:
-            faculty_subject_load[slot.faculty_name][slot.subject_code] += 1
-        
-        # Create prioritized subject options
-        subject_demand = defaultdict(int)
-        for item in original_plan:
-            subject_demand[item['subject_code']] += 1
-        
-        # Sort subjects by demand (higher demand = higher priority)
-        subject_options = []
-        for item in original_plan:
-            subject_options.append({
-                'subject_code': item['subject_code'],
-                'batch': item['batch'],
-                'priority': subject_demand[item['subject_code']]
-            })
-        
-        # Sort by priority (higher first)
-        subject_options.sort(key=lambda x: x['priority'], reverse=True)
-        
-        # Fill gaps with rotation logic
-        for day in all_days:
-            for time in time_slots:
-                if (day, time) in scheduled_slots:
-                    continue
-                
-                best_assignment = None
-                best_score = -1
-                
-                # Try each subject option and score the assignment
-                for option in subject_options:
-                    subject_code = option['subject_code']
-                    batch = option['batch']
-                    
-                    # Find best faculty for this subject with rotation
-                    best_faculty = self._find_rotation_faculty(
-                        subject_code, faculty, faculty_schedule, 
-                        faculty_subject_load, day, time, time_slots
-                    )
-                    
-                    if not best_faculty:
-                        continue
-                    
-                    # Find suitable classroom
-                    best_classroom = self._find_best_classroom(
-                        option.get('subject_type', 'theory'), classrooms, 
-                        classroom_schedule, day, time, batch.get('student_count', 30)
-                    )
-                    
-                    if not best_classroom:
-                        continue
-                    
-                    # Calculate assignment score
-                    score = self._calculate_assignment_score(
-                        best_faculty, subject_code, faculty_subject_load,
-                        faculty_schedule, day, time, option['priority']
-                    )
-                    
-                    if score > best_score:
-                        best_score = score
-                        best_assignment = {
-                            'faculty': best_faculty,
-                            'classroom': best_classroom,
-                            'subject_code': subject_code,
-                            'batch': batch
-                        }
-                
-                # Make the best assignment
-                if best_assignment:
-                    slot = TimetableSlot(
-                        day=day,
-                        time=time,
-                        subject_code=best_assignment['subject_code'],
-                        faculty_name=best_assignment['faculty']['name'],
-                        classroom_name=best_assignment['classroom']['name'],
-                        batch_name=best_assignment['batch']['name']
-                    )
-                    
-                    slots.append(slot)
-                    faculty_schedule[best_assignment['faculty']['name']][day].add(time)
-                    classroom_schedule[best_assignment['classroom']['name']][day].add(time)
-                    faculty_subject_load[best_assignment['faculty']['name']][best_assignment['subject_code']] += 1
-                    scheduled_slots.add((day, time))
-    
-    def _find_rotation_faculty(self, subject_code: str, faculty: List[Dict],
-                              faculty_schedule: Dict, faculty_subject_load: Dict,
-                              day: str, time: str, time_slots: List[str]) -> Dict:
-        """Find faculty using rotation logic to balance workload"""
-        
-        available_faculty = []
-        
-        for f in faculty:
-            # Check if faculty can teach this subject
-            if subject_code not in f.get('subjects', []):
-                continue
-            
-            faculty_name = f['name']
-            
-            # Check availability
-            if time in faculty_schedule[faculty_name][day]:
-                continue
-            
-            # Check daily load limit (max 5 classes per day)
-            if len(faculty_schedule[faculty_name][day]) >= 5:
-                continue
-            
-            # Check for continuous teaching
-            if self._would_be_continuous(faculty_schedule[faculty_name][day], time, time_slots):
-                continue
-            
-            available_faculty.append(f)
-        
-        if not available_faculty:
-            return None
-        
-        # Select faculty with least load for this subject (rotation)
-        best_faculty = min(
-            available_faculty,
-            key=lambda f: (
-                faculty_subject_load[f['name']][subject_code],  # Subject-specific load
-                sum(faculty_subject_load[f['name']].values()),  # Total load
-                len(faculty_schedule[f['name']][day])  # Daily load
-            )
-        )
-        
-        return best_faculty
-    
-    def _calculate_assignment_score(self, faculty: Dict, subject_code: str,
-                                   faculty_subject_load: Dict, faculty_schedule: Dict,
-                                   day: str, time: str, subject_priority: int) -> float:
-        """Calculate score for faculty assignment (higher = better)"""
-        
-        faculty_name = faculty['name']
-        
-        # Base score from subject priority
-        score = subject_priority * 10
-        
-        # Bonus for balanced faculty rotation (less load = higher score)
-        current_subject_load = faculty_subject_load[faculty_name][subject_code]
-        total_faculty_load = sum(faculty_subject_load[faculty_name].values())
-        
-        # Prefer faculty with less load for this subject
-        score += (10 - current_subject_load) * 5
-        
-        # Prefer faculty with less total load
-        score += (20 - total_faculty_load) * 2
-        
-        # Prefer faculty with less daily load
-        daily_load = len(faculty_schedule[faculty_name][day])
-        score += (5 - daily_load) * 3
-        
-        return score
-    
-    def _fill_subject_gaps(self, slots: List[TimetableSlot], faculty: List[Dict],
-                          classrooms: List[Dict], schedule_plan: List[Dict],
-                          faculty_schedule: Dict, classroom_schedule: Dict,
-                          time_slots: List[str]):
-        """Fill gaps to meet minimum subject requirements"""
-        
-        # Get all days from schedule plan
-        all_days = set(item['day'] for item in schedule_plan)
-        
-        # Count current subject allocations
-        subject_counts = defaultdict(int)
-        for slot in slots:
-            subject_counts[slot.subject_code] += 1
-        
-        # Find subjects that need more classes
-        subject_requirements = defaultdict(int)
-        for item in schedule_plan:
-            subject_requirements[item['subject_code']] += 1
-        
-        # Find empty slots to fill
-        empty_slots = self._find_empty_slots(slots, all_days, time_slots)
-        
-        # Fill gaps for subjects that are under-represented
-        for subject_code, required_count in subject_requirements.items():
-            current_count = subject_counts[subject_code]
-            
-            if current_count < required_count:
-                needed = required_count - current_count
-                filled = 0
-                
-                for day, time in empty_slots:
-                    if filled >= needed:
-                        break
-                    
-                    # Find best faculty for this subject
-                    best_faculty = self._find_rotation_faculty(
-                        subject_code, faculty, faculty_schedule,
-                        defaultdict(lambda: defaultdict(int)), day, time, time_slots
-                    )
-                    
-                    if not best_faculty:
-                        continue
-                    
-                    # Find available classroom
-                    best_classroom = None
-                    for classroom in classrooms:
-                        if time not in classroom_schedule[classroom['name']][day]:
-                            best_classroom = classroom
-                            break
-                    
-                    if not best_classroom:
-                        continue
-                    
-                    # Get batch info from schedule plan
-                    batch_info = None
-                    for item in schedule_plan:
-                        if item['subject_code'] == subject_code:
-                            batch_info = item['batch']
-                            break
-                    
-                    if not batch_info:
-                        continue
-                    
-                    # Create the slot
-                    slot = TimetableSlot(
-                        day=day,
-                        time=time,
-                        subject_code=subject_code,
-                        faculty_name=best_faculty['name'],
-                        classroom_name=best_classroom['name'],
-                        batch_name=batch_info['name']
-                    )
-                    
-                    slots.append(slot)
-                    faculty_schedule[best_faculty['name']][day].add(time)
-                    classroom_schedule[best_classroom['name']][day].add(time)
-                    subject_counts[subject_code] += 1
-                    filled += 1
-                    
-                    # Remove from empty slots
-                    if (day, time) in empty_slots:
-                        empty_slots.remove((day, time))
-    
-    def _find_empty_slots(self, slots: List[TimetableSlot], working_days: Set[str],
-                         time_slots: List[str]) -> List[Tuple[str, str]]:
-        """Find all empty time slots"""
-        
-        occupied = set((slot.day, slot.time) for slot in slots)
-        empty_slots = []
-        
-        for day in working_days:
-            for time in time_slots:
-                if time == self.LUNCH_TIME:  # Skip lunch time
-                    continue
-                if (day, time) not in occupied:
-                    empty_slots.append((day, time))
-        
-        return empty_slots
-    
-    def _fill_all_remaining_gaps(self, slots: List[TimetableSlot], faculty: List[Dict],
-                               classrooms: List[Dict], schedule_plan: List[Dict],
-                               faculty_schedule: Dict, classroom_schedule: Dict,
-                               time_slots: List[str]):
-        """Fill all remaining empty slots with available subjects"""
-        
-        # Get all days from schedule plan
-        all_days = set(item['day'] for item in schedule_plan)
-        
-        # Get unique subjects from schedule plan
-        unique_subjects = {}
-        for item in schedule_plan:
-            if item['subject_code'] not in unique_subjects:
-                unique_subjects[item['subject_code']] = {
-                    'subject_code': item['subject_code'],
-                    'batch': item['batch'],
-                    'subject_type': item.get('subject_type', 'theory')
-                }
-        
-        available_subjects = list(unique_subjects.values())
-        
-        # Track faculty load for better rotation
-        faculty_load = defaultdict(lambda: defaultdict(int))
-        for slot in slots:
-            faculty_load[slot.faculty_name][slot.subject_code] += 1
-        
-        # Fill each empty slot
-        max_iterations = 100  # Prevent infinite loops
-        iteration = 0
-        
-        while iteration < max_iterations:
-            empty_slots = self._find_empty_slots(slots, all_days, time_slots)
-            if not empty_slots:
-                break
-                
-            filled_any = False
-            
-            for day, time in empty_slots:
-                best_assignment = None
-                best_score = -1
-                
-                # Try each available subject
-                for subject_info in available_subjects:
-                    subject_code = subject_info['subject_code']
-                    batch = subject_info['batch']
-                    
-                    # Find available faculty (relaxed constraints for gap filling)
-                    available_faculty = []
-                    for f in faculty:
-                        if subject_code not in f.get('subjects', []):
-                            continue
-                        
-                        faculty_name = f['name']
-                        
-                        # Check availability
-                        if time in faculty_schedule[faculty_name][day]:
-                            continue
-                        
-                        # Relaxed daily load limit for gap filling
-                        if len(faculty_schedule[faculty_name][day]) >= 6:
-                            continue
-                        
-                        available_faculty.append(f)
-                    
-                    if not available_faculty:
-                        continue
-                    
-                    # Select faculty with least load
-                    best_faculty = min(
-                        available_faculty,
-                        key=lambda f: (
-                            faculty_load[f['name']][subject_code],
-                            sum(faculty_load[f['name']].values()),
-                            len(faculty_schedule[f['name']][day])
-                        )
-                    )
-                    
-                    # Find available classroom
-                    best_classroom = None
-                    for classroom in classrooms:
-                        if time not in classroom_schedule[classroom['name']][day]:
-                            if classroom['capacity'] >= batch.get('student_count', 30):
-                                best_classroom = classroom
-                                break
-                    
-                    if not best_classroom:
-                        continue
-                    
-                    # Calculate score
-                    current_subject_count = sum(1 for slot in slots if slot.subject_code == subject_code)
-                    score = 100 - current_subject_count + random.randint(1, 10)
-                    
-                    if score > best_score:
-                        best_score = score
-                        best_assignment = {
-                            'faculty': best_faculty,
-                            'classroom': best_classroom,
-                            'subject_code': subject_code,
-                            'batch': batch
-                        }
-                
-                # Make assignment if found
-                if best_assignment:
-                    slot = TimetableSlot(
-                        day=day,
-                        time=time,
-                        subject_code=best_assignment['subject_code'],
-                        faculty_name=best_assignment['faculty']['name'],
-                        classroom_name=best_assignment['classroom']['name'],
-                        batch_name=best_assignment['batch']['name']
-                    )
-                    
-                    slots.append(slot)
-                    faculty_schedule[best_assignment['faculty']['name']][day].add(time)
-                    classroom_schedule[best_assignment['classroom']['name']][day].add(time)
-                    faculty_load[best_assignment['faculty']['name']][best_assignment['subject_code']] += 1
-                    filled_any = True
-                    break  # Move to next iteration to recalculate empty slots
-            
-            if not filled_any:
-                break  # No more slots can be filled
-            
-            iteration += 1
